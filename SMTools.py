@@ -16,7 +16,7 @@ ENCODING = "gb18030"
 
 class Base:
     def __init__(self, argv):
-        if argv[0] == 'h':
+        if argv[0] == 'h' or len(argv) == 0:
             self.print_help()
             sys.exit(0)
 
@@ -97,27 +97,42 @@ class BDFilterListByAns(Base):
             if ii in filename_set:
                 out.write("{}\n".format(ii))
 
+<<<<<<< HEAD
 LIST_HELP = """\
 available classname:
     BDFilterListByAns
     BDExtractWrongFromWer
 """
+=======
+>>>>>>> c532e287a385405f5bef42f1f194080086252e89
 
 GLOBAL_DICT = {
     "BDFilterListByAns" : BDFilterListByAns,
     "BDExtractWrongFromWer" : BDExtractWrongFromWer,
 }
 
+def print_global_help():
+    global GLOBAL_DICT
+    help_str = "available classname:\n"
+    for key in GLOBAL_DICT:
+        help_str += "\t"
+        help_str += key + "\n"
+        doc = GLOBAL_DICT[key].__doc__.strip();
+        help_str += "\t"
+        help_str += doc + "\n\n"
+    print(help_str)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="personal tools")
     if len(sys.argv) > 1 and sys.argv[1] == "list":
-        print(LIST_HELP)
+        print_global_help()
         sys.exit(0)
     parser.add_argument("-c", "--classname", type=str, help = "classname")
     FLAGS, unparsed = parser.parse_known_args()
     classname = FLAGS.classname
     if classname not in GLOBAL_DICT:
-        print(LIST_HELP)
+        print_global_help()
         sys.exit(0)
     worker = GLOBAL_DICT[classname](unparsed)
     worker.run()
