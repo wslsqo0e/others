@@ -13,10 +13,12 @@ import sys
 import argparse
 
 ENCODING = "gb18030"
+def tp(ss):
+    sys.stdout.buffer.write((ss+'\n').encode(ENCODING))
 
 class Base:
     def __init__(self, argv):
-        if argv[0] == 'h' or len(argv) == 0:
+        if len(argv) == 0 or argv[0] == 'h' :
             self.print_help()
             sys.exit(0)
 
@@ -97,30 +99,84 @@ class BDFilterListByAns(Base):
             if ii in filename_set:
                 out.write("{}\n".format(ii))
 
-<<<<<<< HEAD
-LIST_HELP = """\
-available classname:
-    BDFilterListByAns
-    BDExtractWrongFromWer
-"""
-=======
->>>>>>> c532e287a385405f5bef42f1f194080086252e89
+class BDMergeSumDict(Base):
+    '''
+    合并两个sum.dict
+    '''
+    def __init__(self, argv):
+        super(BDMergeSumDict, self).__init__(argv)
+        self.dict1 = argv[0]
+        self.dict2 = argv[1]
+        self.dict_out = argv[2]
+
+    def print_help(self):
+        print("python {} -c {} sum.dict1 sum.dict2 smu.dict.out".format(sys.argv[0], __class__.__name__))
+
+    def read_sum_dict(self, ff):
+        c_dict = {}
+        for i in open(ff, encoding = ENCODING):
+            ii = i.strip().split()
+            word = ii[0].split('(')[0].strip()
+            if word == '</s>' or word == '</s>' or word == '<unk>' or word == 'SL':
+                continue
+            if not word:
+                continue
+            pron = ' '.join(ii[1:])
+            pron = pron.replace(" [ wb ]", "")
+            if word in c_dict:
+                c_dict[word].append(pron)
+                c_dict[word].sort()
+            else:
+                c_dict[word] = [pron]
+        return c_dict
+
+    def run(self):
+        cc_dict1 = self.read_sum_dict(self.dict1)
+        cc_dict2 = self.read_sum_dict(self.dict2)
+        total_dict = {}
+        for k in cc_dict1:
+            if k not in cc_dict2:
+                total_dict[k] = cc_dict1[k]
+            else:
+                pron_list = cc_dict1[k] + cc_dict2[k]
+                total_dict[k] = pron_list
+        out = open(self.dict_out, 'w', encoding = ENCODING)
+        list_dict = sorted(total_dict.items())
+        out.write("{}\n".format("<s>(01)             SIL [ wb ]"))
+        out.write("{}\n".format("</s>(01)             SIL [ wb ]"))
+        out.write("{}\n".format("SL(01)             SIL [ wb ]"))
+        out.write("{}\n".format("<unk>(01)             SIL [ wb ]"))
+        for i in list_dict:
+            word =i[0]
+            pron = list(set(i[1]))
+            pron.sort()
+            for p in range(len(pron)):
+                pp = pron[p].split()
+                if len(pp) == 1:
+                    pp.append("[ wb ]")
+                else:
+                    pp.insert(1, "[ wb ]")
+                    pp.append("[ wb ]")
+                out.write("{}({:0>2})            {}\n".format(word, p+1, " ".join(pp)))
+        out.close()
+
 
 GLOBAL_DICT = {
     "BDFilterListByAns" : BDFilterListByAns,
     "BDExtractWrongFromWer" : BDExtractWrongFromWer,
+    "BDMergeSumDict" : BDMergeSumDict,
 }
 
 def print_global_help():
     global GLOBAL_DICT
-    help_str = "available classname:\n"
+    help_str = "SMTools.py [-h] [-c CLASSNAME]\n\navailable classname:\n"
     for key in GLOBAL_DICT:
         help_str += "\t"
         help_str += key + "\n"
         doc = GLOBAL_DICT[key].__doc__.strip();
         help_str += "\t"
         help_str += doc + "\n\n"
-    print(help_str)
+    tp(help_str)
 
 
 if __name__ == "__main__":
