@@ -11,9 +11,11 @@
 import os
 import sys
 import argparse
+import html
+import re
 
-#ENCODING = "gb18030"
-ENCODING = "utf8"
+ENCODING = "gb18030"
+#ENCODING = "utf8"
 
 #########################small utils##################################
 def tp(ss):
@@ -44,17 +46,33 @@ def read_sum_dict(ff):
             c_dict[word] = [pron]
     return c_dict
 
-def read_pplm_dcit(ff):
+def read_lexicon(ff):
+    '''
+    读取lexicon
+    '''
+    c_dict = {}
+    for i in open(ff, encoding = ENCODING):
+        ii = i.strip().split('\t')
+        word = ii[0]
+        if word in c_dict:
+            c_dict[word].append(ii[1])
+            c_dict[word].sort()
+        else:
+            c_dict[word] = [ii[1]]
+    return c_dict
+
+def read_pplm_dict(ff):
     '''
     读取pplm.dict
     return set type
     '''
     ss = set()
-    for i in open(ff):
+    for i in open(ff, encoding = ENCODING):
         ii = i.strip().split('\t')
         if len(ii) == 1:
             continue
         ss.add(ii[1])
+    return ss
 
 def output_sum_dict(total_dict, ff):
     '''
@@ -96,12 +114,12 @@ def strQ2B(str):
         r_str += chr(inside_code)
     return r_str
 
-def strB2Q(str):
+def strB2Q(ss):
     '''
     半角转全角
     '''
     r_str = ""
-    for char in str:
+    for char in ss:
         inside_code=ord(char)
         if inside_code == 32:
             inside_code = 12288
@@ -110,15 +128,22 @@ def strB2Q(str):
         r_str += chr(inside_code)
     return r_str
 
-def is_contain_Q_Char(str):
+def is_contain_Q_Char(ss):
     '''
     判断文本是否包含全角字符，普通字符除外
     '''
-    for char in str:
+    for char in ss:
         inside_code = ord(char)
         if inside_code == 12288 or (inside_code >= 65281 and inside_code <= 65347):
             return True
     return False
+
+def html_text_handle(ss):
+    '''
+    对网上爬取文本的简单处理，不涉及tag(<span...>)的自动去除
+    '''
+    ss = ss.strip()
+    ss = html.unescape(s).replace('\xa0', ' ')    # \xa0 代表空格，需要进一步转换
 
 #####################################################################
 
@@ -205,6 +230,30 @@ class BDFilterListByAns(Base):
             if ii in filename_set:
                 out.write("{}\n".format(ii))
 
+class BDMergeLexiconSumDict(Base):
+    '''
+    合并一个lexicon加sum.dict
+    '''
+    def __init__(self, argv):
+        super(BDMergeLexiconSumDict, self).__init__(argv)
+        self.dict1 = argv[0]
+        self.dict2 = argv[1]
+        self.dict_out = argv[2]
+
+    def print_help(self):
+        print("python {} -c {} lexicon sum.dict2 sum.dict.out".format(sys.argv[0], __class__.__name__))
+
+    def run(self):
+        cc_dict1 = read_lexicon(self.dict1)
+        cc_dict2 = read_sum_dict(self.dict2)
+        for k in cc_dict1:
+            if k not in cc_dict2:
+                cc_dict2[k] = cc_dict1[k]
+            else:
+                pron_list = cc_dict1[k] + cc_dict2[k]
+                cc_dict2[k] = pron_list
+        output_sum_dict(cc_dict2, self.dict_out)
+
 class BDMergeSumDict(Base):
     '''
     合并两个sum.dict
@@ -221,14 +270,13 @@ class BDMergeSumDict(Base):
     def run(self):
         cc_dict1 = read_sum_dict(self.dict1)
         cc_dict2 = read_sum_dict(self.dict2)
-        total_dict = {}
         for k in cc_dict1:
             if k not in cc_dict2:
-                total_dict[k] = cc_dict1[k]
+                cc_dict2[k] = cc_dict1[k]
             else:
                 pron_list = cc_dict1[k] + cc_dict2[k]
-                total_dict[k] = pron_list
-        output_sum_dict(total_dict, self.dict_out)
+                cc_dict2[k] = pron_list
+        output_sum_dict(cc_dict2, self.dict_out)
 
 class BDFilterSumDictByPPLMDict(Base):
     '''
@@ -245,7 +293,7 @@ class BDFilterSumDictByPPLMDict(Base):
 
     def run(self):
         cc_dict = read_sum_dict(self.sum_dict)
-        words_set = read_pplm_dcit(self.pplm_dict)
+        words_set = read_pplm_dict(self.pplm_dict)
         new_dict = {}
         for k in cc_dict:
             if k in word_set:
@@ -291,12 +339,122 @@ class SMQJBJHandle(Base):
                     new_sen = strB2Q(i)
                 out.write(new_sen)
 
+class BDSplitSentence(Base):
+    '''
+    将长句子进行拆分，首先安装 。 进行拆分，如果长度超过100了，则寻找第一个，进行拆分
+    '''
+    def __init__(self, argv):
+        super(BDSplitSentence, self).__init__(argv)
+        self.in_file = argv[0]
+        self.out_file = argv[1]
+
+    def print_help(self):
+        print("python3 {} -c {} input_file output_file".format(sys.argv[0], __class__.__name__))
+
+    def run(self):
+        out = open(self.out_file, 'w', encoding=ENCODING)
+        for i in open(self.in_file, 'r', encoding=ENCODING):
+            ii = i.strip()
+            cur_str = ""
+            for c in ii:
+                if c != '。' and c != '。':
+                    cur_str += c
+                elif c == '。':
+                    cur_str += c
+                    if len(cur_str) > 1:
+                        out.write("{}\n".format(cur_str.strip()))
+                    cur_str = ''
+                elif len(cur_str) > 100 and c == '，':
+                    cur_str += c
+                    out.write("{}\n".format(cur_str.strip()))
+                    cur_str = ''
+            if cur_str.strip():
+                out.write("{}\n".format(cur_str.strip()))
+        out.close()
+
+class BDGetEngWordsFromRef(Base):
+    '''
+    从测试集中获取英文单词，全部转为半角小写
+    '''
+    def __init__(self, argv):
+        super(BDGetEngWordsFromRef, self).__init__(argv)
+        self.in_file = argv[0]
+        self.out_file = argv[1]
+        self.rule = re.compile(r'[a-z\d]+')
+        self.alphabet_rule = re.compile(r'[a-z]')
+
+    def print_help(self):
+        print("python3 {} -c {} input_file out_word_list_file".format(sys.argv[0], __class__.__name__))
+
+    def get_eng_words(self, sen):
+        sen = strQ2B(sen).lower()
+        ss = set()
+        words = self.rule.findall(sen)
+        for i in words:
+            if self.alphabet_rule.search(i):
+                ss.add(i)
+        return ss
+
+    def run(self):
+        out = open(self.out_file, 'w', encoding=ENCODING)
+        total_ss = set()
+        for i in open(self.in_file, 'r', encoding=ENCODING):
+            ii = i.strip().split('\t', maxsplit = 1)
+            if len(ii) == 1:
+                sen = ii[0]
+            else:
+                sen = ii[1]
+            ss = self.get_eng_words(sen)
+            total_ss |= ss;
+        ll = list(total_ss)
+        ll.sort()
+        for w in ll:
+            out.write("{}\n".format(w))
+
+class BDMergeLexiconPPLM(Base):
+    '''
+    将一个lexicon合并到pplm.dict中，注意全半角转换
+    '''
+    def __init__(self, argv):
+        super(BDMergeLexiconPPLM, self).__init__(argv)
+        self.lexicon = argv[0]
+        self.pplm = argv[1]
+        self.out = argv[2]
+
+    def print_help(self):
+        print("python3 {} -c {} lexicon ori_pplm.dict new_pplm.dict".format(sys.argv[0], __class__.__name__))
+
+    def run(self):
+        pplm_set = read_pplm_dict(self.pplm)
+        lexicon_set = set()
+        for i in open(self.lexicon, 'r', encoding=ENCODING):
+            ii = i.strip()
+            ii = strB2Q(ii)
+            if ii not in pplm_set:
+                lexicon_set.add(ii)
+        lexicon_list = list(lexicon_set); lexicon_list.sort()
+        pplm_list = open(self.pplm, 'r', encoding=ENCODING).readlines()
+        pplm_list_len = len(pplm_list) - 1
+        lexicon_len = len(lexicon_list)
+        pplm_list[0] = str(pplm_list_len + lexicon_len)
+        count = pplm_list_len + 1
+        for i in lexicon_list:
+            pplm_list.append("{}\t{}".format(count, i))
+            count += 1
+        out = open(self.out, 'w', encoding=ENCODING)
+        for i in pplm_list:
+            out.write(i.strip()+'\n')
+        out.close()
 
 GLOBAL_DICT = {
     "BDFilterListByAns" : BDFilterListByAns,
     "BDExtractWrongFromWer" : BDExtractWrongFromWer,
     "BDMergeSumDict" : BDMergeSumDict,
+    "BDMergeLexiconSumDict" : BDMergeLexiconSumDict,
     "BDFilterSumDictByPPLMDict" : BDFilterSumDictByPPLMDict,
+    "BDSplitSentence" : BDSplitSentence,
+    "BDGetEngWordsFromRef" :  BDGetEngWordsFromRef,
+    "BDMergeLexiconPPLM" : BDMergeLexiconPPLM,
     "SMQJBJHandle" : SMQJBJHandle,
 }
 
